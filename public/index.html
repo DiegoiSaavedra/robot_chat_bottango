@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chatbot Voz a Voz</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero__brand">
+          <img id="logo" class="hero__logo" alt="Logo del chatbot" hidden />
+          <div>
+            <p class="eyebrow">OpenAI Realtime API</p>
+            <h1>Chatbot voz a voz</h1>
+          </div>
+        </div>
+        <div id="statusBadge" class="status-badge" data-tone="idle">Desconectado</div>
+      </header>
+
+      <main class="layout">
+        <section class="card card--controls">
+          <h2>Control</h2>
+          <p class="muted">
+            Conecta el microfono y habla. El modelo responde con audio en tiempo
+            real.
+          </p>
+
+          <div class="actions">
+            <button id="connectButton" class="button button--primary">Conectar</button>
+            <button id="disconnectButton" class="button button--ghost" disabled>
+              Cortar
+            </button>
+            <button id="muteButton" class="button button--ghost" disabled>
+              Silenciar
+            </button>
+          </div>
+
+          <section class="motion-panel" aria-labelledby="motionTitle">
+            <div class="motion-panel__header">
+              <div>
+                <h3 id="motionTitle">Arduino / Bottango</h3>
+                <p id="motionDetail" class="muted">
+                  El servidor puede abrir COM6 y sincronizar la animacion con la voz.
+                </p>
+              </div>
+              <span id="motionStatus" class="status-chip" data-tone="idle">
+                Arduino desconectado
+              </span>
+            </div>
+
+            <div class="actions actions--compact">
+              <button id="motionConnectButton" class="button button--ghost">
+                Conectar Arduino
+              </button>
+              <button id="motionDisconnectButton" class="button button--ghost" disabled>
+                Soltar Arduino
+              </button>
+            </div>
+          </section>
+
+          <div class="tips">
+            <p>Tips rapidos</p>
+            <ul>
+              <li>Permite acceso al microfono cuando el navegador lo pida.</li>
+              <li>Habla natural: el turno se corta solo con VAD.</li>
+              <li>Si la respuesta se pisa con tu voz, el modelo se interrumpe.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="card card--conversation">
+          <div class="card__header">
+            <h2>Conversacion</h2>
+            <span class="muted">Transcripciones de apoyo</span>
+          </div>
+          <div id="conversation" class="conversation" aria-live="polite"></div>
+        </section>
+
+        <section class="card card--config">
+          <div class="card__header">
+            <h2>Sesion</h2>
+            <span class="muted">Leido desde el JSON local</span>
+          </div>
+          <dl id="configList" class="config-list"></dl>
+        </section>
+
+        <section class="card card--events">
+          <div class="card__header">
+            <h2>Eventos</h2>
+            <span class="muted">Debug breve del canal realtime</span>
+          </div>
+          <div id="eventLog" class="event-log" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
