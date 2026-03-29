@@ -18,6 +18,8 @@ namespace Callbacks
         bool speechAnimationRequested = false;
         int requestedAnimationIndex = DEFAULT_SPEECH_ANIMATION_INDEX;
         int activeAnimationIndex = -1;
+        bool activeAnimationIsSpeech = false;
+        bool activeAnimationLoops = false;
 
         bool isAnimationIndexValid(int animationIndex)
         {
@@ -44,49 +46,95 @@ namespace Callbacks
                        : -1;
         }
 
+        void clearManagedAnimationState()
+        {
+            activeAnimationIndex = -1;
+            activeAnimationIsSpeech = false;
+            activeAnimationLoops = false;
+        }
+
+        void startManagedAnimation(int animationIndex, bool shouldLoop, bool isSpeech)
+        {
+            BottangoCore::commandStreamProvider->startCommandStream((byte)animationIndex, shouldLoop);
+            activeAnimationIndex = animationIndex;
+            activeAnimationIsSpeech = isSpeech;
+            activeAnimationLoops = shouldLoop;
+        }
+
         void syncSpeechAnimationPlayback()
         {
 #if defined(USE_CODE_COMMAND_STREAM) || defined(USE_SD_CARD_COMMAND_STREAM)
             if (BottangoCore::commandStreamProvider == nullptr)
             {
-                activeAnimationIndex = -1;
+                clearManagedAnimationState();
                 return;
             }
 
-            const int targetAnimationIndex = speechAnimationRequested
-                                                 ? requestedAnimationIndex
-                                                 : resolveIdleAnimationIndex();
-            const bool anotherAnimationIsPlaying =
-                BottangoCore::commandStreamProvider->streamIsInProgress() &&
-                activeAnimationIndex < 0;
+            const bool streamIsInProgress =
+                BottangoCore::commandStreamProvider->streamIsInProgress();
 
-            if (targetAnimationIndex < 0)
+            if (!streamIsInProgress)
             {
-                if (activeAnimationIndex >= 0)
+                clearManagedAnimationState();
+            }
+
+            const int speechAnimationIndex = resolveSpeechAnimationIndex(requestedAnimationIndex);
+            const int idleAnimationIndex = resolveIdleAnimationIndex();
+            const bool anotherAnimationIsPlaying =
+                streamIsInProgress && activeAnimationIndex < 0;
+
+            if (speechAnimationRequested)
+            {
+                if (speechAnimationIndex < 0)
                 {
-                    BottangoCore::commandStreamProvider->stop();
-                    activeAnimationIndex = -1;
+                    return;
                 }
+
+                // Speech runs as a finite cycle. STOP only prevents the next
+                // cycle from starting, so the current arm gesture can finish.
+                if (streamIsInProgress && activeAnimationIsSpeech)
+                {
+                    return;
+                }
+
+                startManagedAnimation(speechAnimationIndex, false, true);
                 return;
             }
 
             // Keep idle looping when the robot is free, but avoid interrupting
-            // unrelated animations that may have been started elsewhere.
-            if (!speechAnimationRequested && anotherAnimationIsPlaying)
+            // an unrelated animation that may have been started elsewhere.
+            if (anotherAnimationIsPlaying)
             {
                 return;
             }
 
-            if (!BottangoCore::commandStreamProvider->streamIsInProgress() ||
-                activeAnimationIndex != targetAnimationIndex)
+            // After STOP, let the current speech cycle end naturally before
+            // switching back to the looping idle animation.
+            if (streamIsInProgress && activeAnimationIsSpeech)
             {
-                BottangoCore::commandStreamProvider->startCommandStream((byte)targetAnimationIndex, true);
-                activeAnimationIndex = targetAnimationIndex;
+                return;
+            }
+
+            if (idleAnimationIndex < 0)
+            {
+                if (activeAnimationIndex >= 0)
+                {
+                    BottangoCore::commandStreamProvider->stop();
+                    clearManagedAnimationState();
+                }
+                return;
+            }
+
+            if (!streamIsInProgress ||
+                activeAnimationIndex != idleAnimationIndex ||
+                !activeAnimationLoops)
+            {
+                startManagedAnimation(idleAnimationIndex, true, false);
             }
 #else
             speechAnimationRequested = false;
             requestedAnimationIndex = DEFAULT_SPEECH_ANIMATION_INDEX;
-            activeAnimationIndex = -1;
+            clearManagedAnimationState();
 #endif
         }
     } // namespace
@@ -103,7 +151,7 @@ namespace Callbacks
     {
         speechAnimationRequested = false;
         requestedAnimationIndex = DEFAULT_SPEECH_ANIMATION_INDEX;
-        activeAnimationIndex = -1;
+        clearManagedAnimationState();
     }
 
     // called after the controller recieves a stop command. The controller will stop all movement, deregister all effectors
@@ -112,7 +160,7 @@ namespace Callbacks
     {
         speechAnimationRequested = false;
         requestedAnimationIndex = DEFAULT_SPEECH_ANIMATION_INDEX;
-        activeAnimationIndex = -1;
+        clearManagedAnimationState();
     }
 
     // called each loop cycle. If you have timing based code you'd like to utilize outside of the Bottango animation
