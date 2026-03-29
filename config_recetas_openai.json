@@ -1,0 +1,20 @@
+{
+  "api_key": "",
+  "modelo": "gpt-4o",
+  "voz"    : "echo",
+  "guardar_config": true,
+  "logo_path": "C:/Users/Usuario/Downloads/ChatGPT Image 23 mar 2026, 15_20_35.png",
+  "motion_control": {
+    "enabled": true,
+    "transport": "server-serial",
+    "activationMode": "response",
+    "serialPort": "COM6",
+    "baudRate": 115200,
+    "speakAnimationIndex": 0,
+    "autoConnectAuthorizedPort": true,
+    "audioThreshold": 0.045,
+    "silenceHoldMs": 280,
+    "responseAudioThreshold": 0.02,
+    "responseSilenceHoldMs": 1200
+  }
+}
