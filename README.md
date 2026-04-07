@@ -31,6 +31,53 @@ El driver incluido ya trae una animacion exportada llamada `habla1`, que corresp
 
 Si luego quieres volver al modo de control en vivo de Bottango por USB, comenta otra vez `USE_CODE_COMMAND_STREAM` en `BottangoArduinoDriver/BottangoArduinoModules.h`.
 
+## Tracking ocular con KB2040
+
+El movimiento de ojos y cuello queda separado del Arduino de Bottango. La PC ejecuta `eye_tracking_bridge.py`, detecta el rostro en la camara MJPEG y envia al KB2040 lineas simples:
+
+- `x,y` con valores normalizados entre `-1.0` y `1.0`.
+- `NOFACE` cuando no hay rostro.
+
+El KB2040 se encarga de suavizar pan, tilt y cuello. Deje una copia de referencia en:
+
+- `hardware/kb2040/boot.py`: habilita un puerto USB CDC de datos.
+- `hardware/kb2040/code.py`: control de servos en `D2`, `D3` y `D4`.
+
+Para instalar dependencias en la PC:
+
+```powershell
+python -m pip install -r .\requirements-eye-tracking.txt
+```
+
+Para probarlo manualmente:
+
+```powershell
+python .\eye_tracking_bridge.py --config .\config_recetas_openai.json
+```
+
+Config opcional en el JSON:
+
+```json
+{
+  "eye_tracking": {
+    "enabled": true,
+    "autoStart": true,
+    "streamUrl": "http://192.168.1.44/800x600.mjpeg",
+    "serialPort": "COM5",
+    "baudRate": 115200,
+    "display": true
+  }
+}
+```
+
+Notas:
+
+- `COM6` queda para Bottango; usa `COM5` o el puerto que Windows asigne al KB2040.
+- Si `autoStart` esta en `true`, `start_chatbot.py` lanza el tracker ocular junto con el servidor.
+- Si falla en modo automatico, revisa `eye_tracking_bridge.log`.
+- El modelo `blaze_face_full_range.tflite` se descarga automaticamente la primera vez.
+- El codigo detecta el rostro, no la pupila: sirve para que el robot mire hacia la cara detectada.
+
 ## Version Python con GUI
 
 Requisitos:

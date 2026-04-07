@@ -354,6 +354,9 @@ function resolveMotionConfig(rawMotionControl) {
 
 function renderConfig(config) {
   state.motionConfig = resolveMotionConfig(config.motionControl);
+  const eyeTracking = config.eyeTracking && typeof config.eyeTracking === "object"
+    ? config.eyeTracking
+    : {};
 
   const items = [
     {
@@ -376,6 +379,12 @@ function renderConfig(config) {
       label: "Movimiento Arduino",
       value: state.motionConfig.enabled
         ? `${state.motionConfig.transport} @ ${state.motionConfig.serialPort} @ ${state.motionConfig.baudRate} baud`
+        : "Desactivado",
+    },
+    {
+      label: "Tracking ocular",
+      value: eyeTracking.enabled
+        ? `${eyeTracking.autoStart ? "Auto" : "Manual"} @ ${eyeTracking.serialPort ?? "COM5"}`
         : "Desactivado",
     },
     {
