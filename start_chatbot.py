@@ -195,6 +195,56 @@ def resolve_motion_control(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def resolve_eye_tracking(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_eye_tracking = get_property_value(
+        payload,
+        "eye_tracking",
+        get_property_value(payload, "eyeTracking", {}),
+    )
+    if not isinstance(raw_eye_tracking, dict):
+        raw_eye_tracking = {}
+
+    enabled = coerce_bool(get_property_value(raw_eye_tracking, "enabled", False), False)
+
+    return {
+        "enabled": enabled,
+        "autoStart": coerce_bool(
+            get_property_value(
+                raw_eye_tracking,
+                "autoStart",
+                get_property_value(raw_eye_tracking, "auto_start", enabled),
+            ),
+            enabled,
+        ),
+        "streamUrl": str(
+            get_property_value(
+                raw_eye_tracking,
+                "streamUrl",
+                get_property_value(raw_eye_tracking, "stream_url", "http://192.168.1.44/800x600.mjpeg"),
+            )
+        ).strip()
+        or "http://192.168.1.44/800x600.mjpeg",
+        "serialPort": str(
+            get_property_value(
+                raw_eye_tracking,
+                "serialPort",
+                get_property_value(raw_eye_tracking, "serial_port", "COM5"),
+            )
+        ).strip()
+        or "COM5",
+        "baudRate": coerce_int(
+            get_property_value(
+                raw_eye_tracking,
+                "baudRate",
+                get_property_value(raw_eye_tracking, "serial_baud", 115200),
+            ),
+            115200,
+            minimum=1200,
+        ),
+        "display": coerce_bool(get_property_value(raw_eye_tracking, "display", True), True),
+    }
+
+
 @dataclass(slots=True)
 class ResolvedConfig:
     api_key: str
@@ -206,6 +256,7 @@ class ResolvedConfig:
     instructions: str
     logo_path: Path | None
     motion_control: dict[str, Any]
+    eye_tracking: dict[str, Any]
 
     @classmethod
     def load(cls, path: Path) -> "ResolvedConfig":
@@ -234,6 +285,7 @@ class ResolvedConfig:
                 logo_path = candidate
 
         motion_control = resolve_motion_control(payload)
+        eye_tracking = resolve_eye_tracking(payload)
 
         return cls(
             api_key=api_key,
@@ -245,6 +297,7 @@ class ResolvedConfig:
             instructions=instructions,
             logo_path=logo_path,
             motion_control=motion_control,
+            eye_tracking=eye_tracking,
         )
 
     def session_definition(self) -> dict[str, Any]:
@@ -282,14 +335,17 @@ class ResolvedConfig:
             "instructions": self.instructions,
             "hasLogo": self.logo_path is not None,
             "motionControl": self.motion_control,
+            "eyeTracking": self.eye_tracking,
         }
 
 
 @dataclass(slots=True)
 class AppContext:
     config: ResolvedConfig
+    config_path: Path
     public_root: Path
     motion_serial: "MotionSerialController"
+    eye_tracking: "EyeTrackingProcessController"
 
 
 def build_motion_command(*parts: str) -> str:
@@ -435,6 +491,83 @@ class MotionSerialController:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=1)
+
+
+class EyeTrackingProcessController:
+    def __init__(self, script_path: Path, config_path: Path, eye_config: dict[str, Any]) -> None:
+        self._script_path = script_path
+        self._config_path = config_path
+        self._eye_config = eye_config
+        self._lock = threading.Lock()
+        self._process: subprocess.Popen[str] | None = None
+        self._log_handle = None
+
+    def _should_autostart(self) -> bool:
+        return bool(self._eye_config.get("enabled")) and bool(self._eye_config.get("autoStart"))
+
+    def start(self) -> None:
+        with self._lock:
+            if not self._should_autostart():
+                return
+
+            if self._process is not None and self._process.poll() is None:
+                return
+
+            self._stop_locked()
+
+            if not self._script_path.is_file():
+                print(f"[WARN] No encontre el tracker ocular en '{self._script_path}'.")
+                return
+
+            log_path = self._script_path.with_suffix(".log")
+            self._log_handle = log_path.open("a", encoding="utf-8")
+            self._log_handle.write("\n--- eye tracking start ---\n")
+            self._log_handle.flush()
+
+            try:
+                self._process = subprocess.Popen(
+                    [
+                        sys.executable,
+                        str(self._script_path),
+                        "--config",
+                        str(self._config_path),
+                    ],
+                    cwd=str(self._script_path.parent),
+                    stdout=self._log_handle,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except OSError as exc:
+                print(f"[WARN] No pude iniciar el tracker ocular: {exc}")
+                self._stop_locked()
+                return
+
+            print(
+                "Tracking ocular iniciado "
+                f"({self._eye_config.get('serialPort', 'COM5')} -> {self._eye_config.get('streamUrl', '')})."
+            )
+
+    def stop(self) -> None:
+        with self._lock:
+            self._stop_locked()
+
+    def _stop_locked(self) -> None:
+        process = self._process
+        self._process = None
+
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=1)
+
+        if self._log_handle is not None:
+            self._log_handle.close()
+            self._log_handle = None
 
 
 def new_client_secret(config: ResolvedConfig) -> dict[str, Any]:
@@ -627,11 +760,13 @@ class LocalServerController:
         self._server = ChatbotHTTPServer((self._host, self._port), self._context)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
+        self._context.eye_tracking.start()
 
     def stop(self) -> None:
         if self._server is None:
             return
 
+        self._context.eye_tracking.stop()
         self._context.motion_serial.disconnect()
         self._server.shutdown()
         self._server.server_close()
@@ -845,6 +980,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def build_context(config_path: Path) -> AppContext:
+    resolved_config_path = config_path.resolve()
     public_root = Path(__file__).with_name("public").resolve()
     if not public_root.is_dir():
         raise FileNotFoundError(f"No encontre la carpeta publica en '{public_root}'.")
@@ -853,12 +989,15 @@ def build_context(config_path: Path) -> AppContext:
     if not bridge_script.is_file():
         raise FileNotFoundError(f"No encontre el puente serial en '{bridge_script}'.")
 
-    config = ResolvedConfig.load(config_path.resolve())
+    config = ResolvedConfig.load(resolved_config_path)
+    eye_tracking_script = Path(__file__).with_name("eye_tracking_bridge.py").resolve()
 
     return AppContext(
         config=config,
+        config_path=resolved_config_path,
         public_root=public_root,
         motion_serial=MotionSerialController(bridge_script, config.motion_control),
+        eye_tracking=EyeTrackingProcessController(eye_tracking_script, resolved_config_path, config.eye_tracking),
     )
 
 

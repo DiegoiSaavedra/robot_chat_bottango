@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+blaze_face_full_range.tflite
+eye_tracking_bridge.log
